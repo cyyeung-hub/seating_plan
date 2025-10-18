@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧座位生成器 - AI Seating Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(8px);
+        }
+        
+        .seat {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .seat::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+        
+        .seat:hover::before {
+            left: 100%;
+        }
+        
+        .seat:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .seat.occupied {
+            background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+            color: #374151;
+            box-shadow: 0 4px 15px rgba(199, 210, 254, 0.3);
+            border-color: #000000;
+        }
+        
+        .seat.empty {
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px dashed #c7d2fe;
+            color: #6366f1;
+        }
+        
+        .seat.selected {
+            background: #10b981;
+            color: white;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+            50% { box-shadow: 0 0 30px rgba(16, 185, 129, 0.8); }
+        }
+        
+        .student-item {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .student-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.3s;
+        }
+        
+        .student-item:hover::before {
+            left: 100%;
+        }
+        
+        .student-item:hover {
+            transform: translateX(8px) scale(1.02);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .student-item.selected {
+            background: #10b981;
+            color: white;
+            transform: translateX(8px) scale(1.02);
+        }
+        
+        .dragging {
+            opacity: 0.9;
+            transform: scale(1.3);
+            z-index: 1000;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            animation: dragScale 0.6s ease-in-out infinite alternate;
+        }
+        
+        @keyframes dragScale {
+            from { 
+                transform: scale(1.3);
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            }
+            to { 
+                transform: scale(1.4);
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+            }
+        }
+        
+        .drop-zone-available {
+            background: rgba(16, 185, 129, 0.05);
+            border: 2px dashed #10b981;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+            animation: availableZonePulse 2s ease-in-out infinite;
+        }
+        
+        .drop-zone-active {
+            background: rgba(16, 185, 129, 0.15);
+            border: 3px solid #10b981;
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.4);
+            transform: scale(1.05);
+            animation: activeZoneGlow 0.6s ease-in-out infinite alternate;
+        }
+        
+        @keyframes availableZonePulse {
+            0%, 100% { 
+                box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+                border-color: #10b981;
+            }
+            50% { 
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+                border-color: #059669;
+            }
+        }
+        
+        @keyframes activeZoneGlow {
+            0% { 
+                box-shadow: 0 0 25px rgba(16, 185, 129, 0.4);
+                background: rgba(16, 185, 129, 0.15);
+            }
+            100% { 
+                box-shadow: 0 0 35px rgba(16, 185, 129, 0.6);
+                background: rgba(16, 185, 129, 0.25);
+            }
+        }
+        
+        @keyframes dragFloat {
+            0% { 
+                transform: rotate(-3deg) scale(1.1);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            }
+            100% { 
+                transform: rotate(-5deg) scale(1.15);
+                box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            }
+        }
+        
+        .drag-preview {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1001;
+            opacity: 0.9;
+            transform: rotate(5deg) scale(1.1);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            border-radius: 12px;
+            transition: none;
+        }
+        
+        .smart-button {
+            background: linear-gradient(135deg, #8b5cf6, #a855f7);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .smart-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .smart-button:hover::before {
+            left: 100%;
+        }
+        
+        .smart-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .floating-card {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .ai-glow {
+            box-shadow: 0 0 30px rgba(102, 126, 234, 0.3);
+            animation: glow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { box-shadow: 0 0 20px rgba(102, 126, 234, 0.3); }
+            to { box-shadow: 0 0 40px rgba(102, 126, 234, 0.6); }
+        }
+        
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; }
+            .gradient-bg { background: white !important; }
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen">
+    <div class="container mx-auto p-4 lg:p-6 max-w-7xl">
+        <!-- 頂部標題區域 -->
+        <div class="text-center mb-8">
+            <div class="floating-card glass-effect rounded-2xl p-6 mb-6 ai-glow">
+                <h1 class="text-3xl lg:text-5xl font-bold text-gray-800 mb-2">
+                    座位表生成器
+                </h1>
+                <div class="mt-4">
+                    <input type="text" id="classNameInput" placeholder="輸入班別" 
+                           class="text-xl font-semibold text-center bg-gray-50 border-2 border-gray-300 rounded-xl px-6 py-3 text-gray-800 placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-all w-full max-w-md">
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
+            <!-- 左側智慧控制面板 -->
+            <div class="xl:col-span-1 no-print">
+                <div class="space-y-6 max-h-[800px] overflow-y-auto pr-2">
+                    
+
+
+                    <!-- 教室設定 -->
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                            🏫 教室設定
+                        </h2>
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">列數</label>
+                                    <select id="rowsInput" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 focus:outline-none focus:border-blue-500">
+                                        <option value="3">3列</option>
+                                        <option value="4">4列</option>
+                                        <option value="5" selected>5列</option>
+                                        <option value="6">6列</option>
+                                        <option value="7">7列</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">行數</label>
+                                    <select id="colsInput" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 focus:outline-none focus:border-blue-500">
+                                        <option value="4">4行</option>
+                                        <option value="5">5行</option>
+                                        <option value="6" selected>6行</option>
+                                        <option value="7">7行</option>
+                                        <option value="8">8行</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-3">座位模式</label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="flex items-center p-3 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100 transition-all">
+                                        <input type="radio" name="seatType" value="separate" checked class="mr-2 text-blue-600">
+                                        <div class="text-gray-800 font-medium">🪑 單人座</div>
+                                    </label>
+                                    <label class="flex items-center p-3 bg-gray-50 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100 transition-all">
+                                        <input type="radio" name="seatType" value="double" class="mr-2 text-blue-600">
+                                        <div class="text-gray-800 font-medium">🪑🪑 雙人座</div>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <button onclick="updateSeatingChart()" class="w-full smart-button text-white font-medium py-3 px-4 rounded-lg">
+                                🔄 更新座位表
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 學生管理 -->
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                            👨‍🎓👩‍🎓 學生管理
+                        </h2>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">快速匯入</label>
+                            <textarea id="studentListInput" placeholder="每行一個學生姓名，或貼上名單..." 
+                                      class="w-full h-32 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm">01 王小明
+02 李小華
+03 張小美
+04 陳小強
+05 林小芳
+06 黃小龍
+07 吳小雯
+08 劉小傑
+09 蔡小玲
+10 鄭小宇
+11 謝小慧
+12 許小偉
+13 楊小婷
+14 賴小峰
+15 徐小雅
+16 馬小勇
+17 孫小琪
+18 周小豪
+19 趙小萍
+20 朱小剛
+21 胡小蘭
+22 郭小輝
+23 何小純
+24 羅小軍
+25 高小娟
+26 梁小斌
+27 宋小霞
+28 唐小東
+29 韓小麗
+30 馮小波</textarea>
+                            <button onclick="importStudents()" class="w-full mt-2 smart-button text-white font-medium py-2 px-4 rounded-lg">
+                                📥 匯入學生名單
+                            </button>
+                            
+                            <!-- 統計資訊 -->
+                            <div class="mt-3 text-sm text-gray-600 bg-gray-50 rounded-lg p-3 border border-gray-200 text-center">
+                                總學生 <strong id="totalStudents">0</strong> 人 | 已安排 <strong id="assignedStudents">0</strong> 人 | 待安排 <strong id="unassignedStudents">0</strong> 人
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">學生列表</label>
+                            <div id="studentList" class="h-40 overflow-y-auto space-y-2 bg-gray-50 rounded-lg p-3 border border-gray-300">
+                                <!-- 學生項目將在這裡動態生成 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 智慧功能 -->
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                            🪑 座位操作
+                        </h2>
+                        
+                        <div class="space-y-3">
+                            <button onclick="smartRandomAssign()" class="w-full smart-button text-white font-medium py-3 px-4 rounded-lg">
+                                🎲 隨機分配
+                            </button>
+
+
+
+                            <button onclick="clearAllSeats()" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-3 px-4 rounded-lg transition-all">
+                                🧹 清空重置
+                            </button>
+
+                            <button onclick="printSeatingChart()" class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 px-4 rounded-lg transition-all">
+                                🖨️ 列印座位表
+                            </button>
+
+
+                        </div>
+
+                        <div class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <h3 class="font-medium text-gray-800 mb-2">💡 智慧提示</h3>
+                            <ul class="text-sm text-gray-600 space-y-1">
+                                <li>• 點選學生後點擊座位安排</li>
+                                <li>• 拖拽學生可調換位置</li>
+                                <li>• AI會自動優化座位配置</li>
+                                <li>• 支援多種座位模式</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側座位表預覽 -->
+            <div class="xl:col-span-3">
+                <div class="glass-effect rounded-2xl p-6 min-h-[800px]">
+                    <div class="text-center mb-6">
+                        <h2 id="classTitle" class="text-2xl lg:text-3xl font-bold text-gray-800" style="display: none;"></h2>
+                    </div>
+
+                    <!-- 教室佈局 -->
+                    <div class="classroom-container">
+                        <!-- 佈告欄區域 -->
+                        <div class="mb-6">
+                            <div class="bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-xl p-4 text-center shadow-lg">
+                                <div class="text-lg font-bold text-white">📋 佈告欄</div>
+                            </div>
+                        </div>
+
+                        <!-- 座位區域 -->
+                        <div class="relative">
+                            <div id="seatingChart" class="mb-8">
+                                <!-- 座位將在這裡動態生成 -->
+                            </div>
+                            
+                            <!-- 老師座位 -->
+                            <div class="absolute bottom-0 right-0 transform translate-y-full translate-x-4">
+                                <div class="bg-gradient-to-r from-amber-400 to-orange-400 rounded-xl p-4 text-center shadow-lg min-w-32">
+                                    <div class="text-sm font-bold text-white">👨‍🏫 老師座位</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版權資訊 -->
+    <div class="no-print text-center py-6 mt-8">
+        <div class="glass-effect rounded-xl p-4 max-w-md mx-auto">
+            <p class="text-gray-600 text-sm">
+                Canva AI generated by Ronald Yeung, 2025
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // 全域變數
+        let students = [];
+        let selectedStudent = null;
+        let seatingData = {};
+        let rows = 5;
+        let cols = 6;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            students = [];
+            updateStudentList();
+            updateSeatingChart();
+            updateStatistics();
+
+            // 班級名稱即時更新
+            document.getElementById('classNameInput').addEventListener('input', function() {
+                const className = this.value;
+                const titleElement = document.getElementById('classTitle');
+                if (className.trim()) {
+                    titleElement.textContent = className + ' - 座位表';
+                    titleElement.style.display = 'block';
+                } else {
+                    titleElement.style.display = 'none';
+                }
+            });
+
+            // 座位表設定監聽
+            document.getElementById('rowsInput').addEventListener('change', function() {
+                rows = parseInt(this.value);
+            });
+
+            document.getElementById('colsInput').addEventListener('change', function() {
+                cols = parseInt(this.value);
+            });
+        });
+
+        // 更新學生列表
+        function updateStudentList() {
+            const studentList = document.getElementById('studentList');
+            studentList.innerHTML = '';
+
+            if (students.length === 0) {
+                studentList.innerHTML = '<div class="text-gray-500 text-center py-4">尚未匯入學生名單</div>';
+                return;
+            }
+
+            students.forEach((student, index) => {
+                const isAssigned = Object.values(seatingData).includes(student);
+                const studentDiv = document.createElement('div');
+                studentDiv.className = `student-item p-3 rounded-lg border ${isAssigned ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-white border-gray-300 text-gray-800 cursor-pointer'}`;
+                studentDiv.textContent = student;
+                
+                if (!isAssigned) {
+                    studentDiv.addEventListener('click', () => selectStudent(student));
+                }
+                
+                studentList.appendChild(studentDiv);
+            });
+        }
+
+        // 選擇學生
+        function selectStudent(student) {
+            document.querySelectorAll('.student-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            selectedStudent = student;
+            event.target.classList.add('selected');
+        }
+
+        // 更新座位表
+        function updateSeatingChart() {
+            const seatingChart = document.getElementById('seatingChart');
+            seatingChart.innerHTML = '';
+            
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            
+            // 保留相容的座位安排
+            const newValidSeats = {};
+            if (seatType === 'separate') {
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const seatId = `${row}-${col}`;
+                        if (seatingData[seatId]) {
+                            newValidSeats[seatId] = seatingData[seatId];
+                        }
+                    }
+                }
+            } else if (seatType === 'double') {
+                for (let row = 0; row < rows; row++) {
+                    for (let tableCol = 0; tableCol < Math.ceil(cols/2); tableCol++) {
+                        const leftSeatId = `${row}-${tableCol * 2}`;
+                        if (seatingData[leftSeatId]) {
+                            newValidSeats[leftSeatId] = seatingData[leftSeatId];
+                        }
+                        if (tableCol * 2 + 1 < cols) {
+                            const rightSeatId = `${row}-${tableCol * 2 + 1}`;
+                            if (seatingData[rightSeatId]) {
+                                newValidSeats[rightSeatId] = seatingData[rightSeatId];
+                            }
+                        }
+                    }
+                }
+            }
+            
+            seatingData = newValidSeats;
+            
+            if (seatType === 'separate') {
+                // 單人座模式
+                const grid = document.createElement('div');
+                grid.className = 'grid gap-3 justify-items-center';
+                grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const seatId = `${row}-${col}`;
+                        const seat = document.createElement('div');
+                        seat.className = 'seat w-24 h-16 lg:w-28 lg:h-20 rounded-xl flex items-center justify-center text-base lg:text-lg font-bold border-2 shadow-lg';
+                        seat.id = `seat-${seatId}`;
+                        
+                        const student = seatingData[seatId];
+                        if (student) {
+                            seat.classList.add('occupied');
+                            seat.textContent = student;
+                            seat.draggable = true;
+                            
+                            // Chrome相容性 - 移除舊事件監聽器
+                            seat.removeEventListener('dragstart', handleDragStart);
+                            seat.removeEventListener('dragend', handleDragEnd);
+                            seat.removeEventListener('click', removeSeat);
+                            
+                            // 重新綁定事件
+                            seat.addEventListener('dragstart', handleDragStart, { passive: false });
+                            seat.addEventListener('dragend', handleDragEnd, { passive: false });
+                            seat.addEventListener('click', () => removeSeat(seatId));
+                        } else {
+                            seat.classList.add('empty');
+                            seat.textContent = '';
+                            seat.draggable = false;
+                            
+                            // 移除舊事件監聽器
+                            seat.removeEventListener('click', assignSeat);
+                            seat.addEventListener('click', () => assignSeat(seatId));
+                        }
+
+                        // 移除舊的拖拽事件監聽器
+                        seat.removeEventListener('dragover', handleDragOver);
+                        seat.removeEventListener('dragenter', handleDragEnter);
+                        seat.removeEventListener('dragleave', handleDragLeave);
+                        seat.removeEventListener('drop', handleDrop);
+                        
+                        // 重新綁定拖拽事件
+                        seat.addEventListener('dragover', handleDragOver, { passive: false });
+                        seat.addEventListener('dragenter', handleDragEnter, { passive: false });
+                        seat.addEventListener('dragleave', handleDragLeave, { passive: false });
+                        seat.addEventListener('drop', handleDrop, { passive: false });
+                        
+                        // 為座位添加額外的拖拽區域標記
+                        seat.setAttribute('data-drop-zone', 'true');
+                        
+                        grid.appendChild(seat);
+                    }
+                }
+                seatingChart.appendChild(grid);
+                
+            } else if (seatType === 'double') {
+                // 雙人座模式
+                const grid = document.createElement('div');
+                grid.className = 'grid gap-3 justify-items-center';
+                grid.style.gridTemplateColumns = `repeat(${Math.ceil(cols/2)}, minmax(0, 1fr))`;
+
+                for (let row = 0; row < rows; row++) {
+                    for (let tableCol = 0; tableCol < Math.ceil(cols/2); tableCol++) {
+                        const tableContainer = document.createElement('div');
+                        tableContainer.className = 'flex gap-1 bg-white/10 backdrop-blur-sm p-2 rounded-xl border border-white/30 shadow-lg';
+                        
+                        // 左座位
+                        const leftSeatId = `${row}-${tableCol * 2}`;
+                        const leftSeat = document.createElement('div');
+                        leftSeat.className = 'seat w-20 h-14 lg:w-24 lg:h-16 rounded-lg flex items-center justify-center text-sm lg:text-base font-bold border-2';
+                        leftSeat.id = `seat-${leftSeatId}`;
+                        
+                        const leftStudent = seatingData[leftSeatId];
+                        if (leftStudent) {
+                            leftSeat.classList.add('occupied');
+                            leftSeat.textContent = leftStudent;
+                            leftSeat.draggable = true;
+                            
+                            // Chrome相容性 - 移除舊事件監聽器
+                            leftSeat.removeEventListener('dragstart', handleDragStart);
+                            leftSeat.removeEventListener('dragend', handleDragEnd);
+                            leftSeat.removeEventListener('click', removeSeat);
+                            
+                            // 重新綁定事件
+                            leftSeat.addEventListener('dragstart', handleDragStart, { passive: false });
+                            leftSeat.addEventListener('dragend', handleDragEnd, { passive: false });
+                            leftSeat.addEventListener('click', () => removeSeat(leftSeatId));
+                        } else {
+                            leftSeat.classList.add('empty');
+                            leftSeat.textContent = '';
+                            leftSeat.draggable = false;
+                            
+                            // 移除舊事件監聽器
+                            leftSeat.removeEventListener('click', assignSeat);
+                            leftSeat.addEventListener('click', () => assignSeat(leftSeatId));
+                        }
+                        
+                        // 移除舊的拖拽事件監聽器
+                        leftSeat.removeEventListener('dragover', handleDragOver);
+                        leftSeat.removeEventListener('dragenter', handleDragEnter);
+                        leftSeat.removeEventListener('dragleave', handleDragLeave);
+                        leftSeat.removeEventListener('drop', handleDrop);
+                        
+                        // 重新綁定拖拽事件
+                        leftSeat.addEventListener('dragover', handleDragOver, { passive: false });
+                        leftSeat.addEventListener('dragenter', handleDragEnter, { passive: false });
+                        leftSeat.addEventListener('dragleave', handleDragLeave, { passive: false });
+                        leftSeat.addEventListener('drop', handleDrop, { passive: false });
+                        
+                        // 為座位添加額外的拖拽區域標記
+                        leftSeat.setAttribute('data-drop-zone', 'true');
+                        
+                        tableContainer.appendChild(leftSeat);
+                        
+                        // 右座位
+                        if (tableCol * 2 + 1 < cols) {
+                            const rightSeatId = `${row}-${tableCol * 2 + 1}`;
+                            const rightSeat = document.createElement('div');
+                            rightSeat.className = 'seat w-20 h-14 lg:w-24 lg:h-16 rounded-lg flex items-center justify-center text-sm lg:text-base font-bold border-2';
+                            rightSeat.id = `seat-${rightSeatId}`;
+                            
+                            const rightStudent = seatingData[rightSeatId];
+                            if (rightStudent) {
+                                rightSeat.classList.add('occupied');
+                                rightSeat.textContent = rightStudent;
+                                rightSeat.draggable = true;
+                                
+                                // Chrome相容性 - 移除舊事件監聽器
+                                rightSeat.removeEventListener('dragstart', handleDragStart);
+                                rightSeat.removeEventListener('dragend', handleDragEnd);
+                                rightSeat.removeEventListener('click', removeSeat);
+                                
+                                // 重新綁定事件
+                                rightSeat.addEventListener('dragstart', handleDragStart, { passive: false });
+                                rightSeat.addEventListener('dragend', handleDragEnd, { passive: false });
+                                rightSeat.addEventListener('click', () => removeSeat(rightSeatId));
+                            } else {
+                                rightSeat.classList.add('empty');
+                                rightSeat.textContent = '';
+                                rightSeat.draggable = false;
+                                
+                                // 移除舊事件監聽器
+                                rightSeat.removeEventListener('click', assignSeat);
+                                rightSeat.addEventListener('click', () => assignSeat(rightSeatId));
+                            }
+                            
+                            // 移除舊的拖拽事件監聽器
+                            rightSeat.removeEventListener('dragover', handleDragOver);
+                            rightSeat.removeEventListener('dragenter', handleDragEnter);
+                            rightSeat.removeEventListener('dragleave', handleDragLeave);
+                            rightSeat.removeEventListener('drop', handleDrop);
+                            
+                            // 重新綁定拖拽事件
+                            rightSeat.addEventListener('dragover', handleDragOver, { passive: false });
+                            rightSeat.addEventListener('dragenter', handleDragEnter, { passive: false });
+                            rightSeat.addEventListener('dragleave', handleDragLeave, { passive: false });
+                            rightSeat.addEventListener('drop', handleDrop, { passive: false });
+                            
+                            // 為座位添加額外的拖拽區域標記
+                            rightSeat.setAttribute('data-drop-zone', 'true');
+                            
+                            tableContainer.appendChild(rightSeat);
+                        }
+                        
+                        grid.appendChild(tableContainer);
+                    }
+                }
+                seatingChart.appendChild(grid);
+            }
+        }
+
+        // 安排座位
+        function assignSeat(seatId) {
+            if (selectedStudent && !seatingData[seatId]) {
+                seatingData[seatId] = selectedStudent;
+                selectedStudent = null;
+                
+                document.querySelectorAll('.student-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                
+                updateSeatingChart();
+                updateStudentList();
+                updateStatistics();
+            }
+        }
+
+        // 移除座位
+        function removeSeat(seatId) {
+            if (seatingData[seatId]) {
+                delete seatingData[seatId];
+                updateSeatingChart();
+                updateStudentList();
+                updateStatistics();
+            }
+        }
+
+        // 拖拽功能 - Chrome相容性優化
+        let dragState = {
+            element: null,
+            seatId: null,
+            student: null,
+            startX: 0,
+            startY: 0,
+            isDragging: false
+        };
+
+        function handleDragStart(e) {
+            const seatElement = e.target;
+            const seatId = seatElement.id.replace('seat-', '');
+            const student = seatingData[seatId];
+            
+            if (!student) {
+                e.preventDefault();
+                return false;
+            }
+            
+            // 初始化拖拽狀態
+            dragState = {
+                element: seatElement,
+                seatId: seatId,
+                student: student,
+                startX: e.clientX,
+                startY: e.clientY,
+                isDragging: true
+            };
+            
+            // Chrome相容性設定
+            try {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', student);
+                e.dataTransfer.setData('application/json', JSON.stringify({
+                    seatId: seatId,
+                    student: student
+                }));
+            } catch (error) {
+                console.warn('DataTransfer設定失敗:', error);
+            }
+            
+            // 添加拖拽中的視覺效果
+            setTimeout(() => {
+                if (seatElement && dragState.isDragging) {
+                    seatElement.classList.add('dragging');
+                    seatElement.style.opacity = '0.5';
+                }
+            }, 0);
+            
+            // 顯示所有可放置區域
+            highlightDropZones();
+            
+            return true;
+        }
+
+
+
+        function highlightDropZones() {
+            // 移除淡綠色提示效果
+        }
+
+        function clearDropZones() {
+            document.querySelectorAll('.seat').forEach(seat => {
+                seat.classList.remove('drop-zone-available', 'drop-zone-active');
+            });
+        }
+
+        // 尋找座位元素的輔助函數 - 擴大有效範圍
+        function findSeatElement(element) {
+            // 如果元素本身就是座位，直接返回
+            if (element && element.classList && element.classList.contains('seat')) {
+                return element;
+            }
+            
+            // 檢查是否有拖拽區域標記
+            if (element && element.hasAttribute && element.hasAttribute('data-drop-zone')) {
+                return element;
+            }
+            
+            // 向上搜尋父元素，最多搜尋5層，擴大搜尋範圍
+            let current = element;
+            let depth = 0;
+            while (current && current.parentElement && depth < 5) {
+                current = current.parentElement;
+                if (current.classList && current.classList.contains('seat')) {
+                    return current;
+                }
+                if (current.hasAttribute && current.hasAttribute('data-drop-zone')) {
+                    return current;
+                }
+                depth++;
+            }
+            
+            // 如果沒找到，嘗試在附近更大區域尋找座位元素
+            if (element && element.getBoundingClientRect) {
+                const rect = element.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                
+                // 擴大搜尋範圍，在多個點位尋找
+                const searchPoints = [
+                    [centerX, centerY],
+                    [centerX - 20, centerY],
+                    [centerX + 20, centerY],
+                    [centerX, centerY - 20],
+                    [centerX, centerY + 20]
+                ];
+                
+                for (const [x, y] of searchPoints) {
+                    const nearbyElement = document.elementFromPoint(x, y);
+                    if (nearbyElement && nearbyElement.classList && nearbyElement.classList.contains('seat')) {
+                        return nearbyElement;
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        function handleDragOver(e) {
+            if (!dragState.isDragging) return;
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Chrome相容性設定
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = 'move';
+            }
+            
+            // 擴大有效範圍 - 檢查目標元素或其父元素是否為座位
+            const targetSeat = findSeatElement(e.target);
+            if (targetSeat && targetSeat !== dragState.element) {
+                // 清除其他座位的高亮
+                document.querySelectorAll('.drop-zone-active').forEach(seat => {
+                    if (seat !== targetSeat) {
+                        seat.classList.remove('drop-zone-active');
+                    }
+                });
+                targetSeat.classList.add('drop-zone-active');
+            }
+        }
+
+        function handleDragEnter(e) {
+            if (!dragState.isDragging) return;
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const targetSeat = findSeatElement(e.target);
+            if (targetSeat && targetSeat !== dragState.element) {
+                targetSeat.classList.add('drop-zone-active');
+            }
+        }
+
+        function handleDragLeave(e) {
+            if (!dragState.isDragging) return;
+            
+            const targetSeat = findSeatElement(e.target);
+            if (targetSeat && !targetSeat.contains(e.relatedTarget)) {
+                targetSeat.classList.remove('drop-zone-active');
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (!dragState.isDragging) {
+                cleanupDragState();
+                return;
+            }
+            
+            // 擴大有效範圍 - 尋找最近的座位元素
+            const targetSeat = findSeatElement(e.target);
+            if (!targetSeat || targetSeat === dragState.element) {
+                cleanupDragState();
+                return;
+            }
+            
+            const targetSeatId = targetSeat.id.replace('seat-', '');
+            const targetStudent = seatingData[targetSeatId];
+            
+            // 驗證拖拽數據
+            let dragData = null;
+            try {
+                const jsonData = e.dataTransfer.getData('application/json');
+                if (jsonData) {
+                    dragData = JSON.parse(jsonData);
+                }
+            } catch (error) {
+                // 使用備用數據
+                dragData = {
+                    seatId: dragState.seatId,
+                    student: dragState.student
+                };
+            }
+            
+            if (!dragData || !dragData.student) {
+                cleanupDragState();
+                return;
+            }
+            
+            // 執行位置交換或移動
+            if (targetStudent) {
+                // 交換兩個學生的位置
+                seatingData[dragState.seatId] = targetStudent;
+                seatingData[targetSeatId] = dragState.student;
+            } else {
+                // 移動到空座位
+                delete seatingData[dragState.seatId];
+                seatingData[targetSeatId] = dragState.student;
+            }
+            
+            // 更新界面
+            updateSeatingChart();
+            updateStudentList();
+            updateStatistics();
+            
+            cleanupDragState();
+        }
+
+        function handleDragEnd(e) {
+            // 延遲清理，確保drop事件能正常執行
+            setTimeout(() => {
+                cleanupDragState();
+            }, 100);
+        }
+
+        function cleanupDragState() {
+            // 清理拖拽元素樣式
+            if (dragState.element) {
+                dragState.element.classList.remove('dragging');
+                dragState.element.style.opacity = '';
+            }
+            
+            // 清理所有放置區域樣式
+            clearDropZones();
+            
+            // 重置拖拽狀態
+            dragState = {
+                element: null,
+                seatId: null,
+                student: null,
+                startX: 0,
+                startY: 0,
+                isDragging: false
+            };
+        }
+
+        // 匯入學生
+        function importStudents() {
+            const input = document.getElementById('studentListInput').value.trim();
+            if (input) {
+                const newStudents = input.split('\n').filter(name => name.trim()).map(name => name.trim());
+                
+                if (newStudents.length > 0) {
+                    students = [];
+                    seatingData = {};
+                    students = [...new Set(newStudents)];
+                    
+                    updateSeatingChart();
+                    updateStudentList();
+                    updateStatistics();
+                    document.getElementById('studentListInput').value = '';
+                    
+                    // 顯示成功訊息
+                    showNotification(`✅ 成功匯入 ${students.length} 名學生！`, 'success');
+                } else {
+                    showNotification('❌ 請輸入有效的學生名單！', 'error');
+                }
+            } else {
+                showNotification('❌ 請先輸入學生名單！', 'error');
+            }
+        }
+
+        // 智慧隨機分配
+        function smartRandomAssign() {
+            if (students.length === 0) {
+                showNotification('❌ 請先匯入學生名單！', 'error');
+                return;
+            }
+            
+            seatingData = {};
+            const availableSeats = [];
+            const studentsToAssign = [...students];
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            
+            // 生成可用座位
+            if (seatType === 'separate') {
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        availableSeats.push(`${row}-${col}`);
+                    }
+                }
+            } else if (seatType === 'double') {
+                for (let row = 0; row < rows; row++) {
+                    for (let tableCol = 0; tableCol < Math.ceil(cols/2); tableCol++) {
+                        availableSeats.push(`${row}-${tableCol * 2}`);
+                        if (tableCol * 2 + 1 < cols) {
+                            availableSeats.push(`${row}-${tableCol * 2 + 1}`);
+                        }
+                    }
+                }
+            }
+            
+            if (availableSeats.length < studentsToAssign.length) {
+                const seatTypeName = seatType === 'separate' ? '單人座' : '雙人座';
+                showNotification(`❌ 座位不足！${seatTypeName}模式有 ${availableSeats.length} 個座位，需要 ${studentsToAssign.length} 名學生`, 'error');
+                return;
+            }
+            
+            // 智慧分配演算法
+            while (studentsToAssign.length > 0) {
+                const randomSeatIndex = Math.floor(Math.random() * availableSeats.length);
+                const randomStudentIndex = Math.floor(Math.random() * studentsToAssign.length);
+                
+                seatingData[availableSeats[randomSeatIndex]] = studentsToAssign[randomStudentIndex];
+                
+                availableSeats.splice(randomSeatIndex, 1);
+                studentsToAssign.splice(randomStudentIndex, 1);
+            }
+            
+            updateSeatingChart();
+            updateStudentList();
+            updateStatistics();
+            
+            const seatTypeName = seatType === 'separate' ? '單人座' : '雙人座';
+            showNotification(`🎉 成功分配 ${students.length} 名學生！使用${seatTypeName}模式`, 'success');
+        }
+
+
+
+        // 清空座位
+        function clearAllSeats() {
+            seatingData = {};
+            selectedStudent = null;
+            
+            document.querySelectorAll('.student-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            updateSeatingChart();
+            updateStudentList();
+            updateStatistics();
+            
+            showNotification('🧹 座位已清空重置', 'info');
+        }
+
+        // 更新統計
+        function updateStatistics() {
+            const total = students.length;
+            const assigned = Object.keys(seatingData).length;
+            const unassigned = total - assigned;
+            
+            document.getElementById('totalStudents').textContent = total;
+            document.getElementById('assignedStudents').textContent = assigned;
+            document.getElementById('unassignedStudents').textContent = unassigned;
+        }
+
+        // 通知系統
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            };
+            
+            notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.transform = 'translateX(0)';
+            }, 100);
+            
+            setTimeout(() => {
+                notification.style.transform = 'translateX(full)';
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // JPG下載功能
+        function downloadJPG() {
+            if (students.length === 0) {
+                showNotification('❌ 請先匯入學生名單！', 'error');
+                return;
+            }
+            
+            // 顯示載入動畫
+            const btnText = document.getElementById('downloadBtnText');
+            const spinner = document.getElementById('downloadSpinner');
+            btnText.textContent = '📸 生成中...';
+            spinner.classList.remove('hidden');
+            
+            const classNameInput = document.getElementById('classNameInput').value;
+            const className = classNameInput ? classNameInput : '座位表';
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            
+            // 創建用於截圖的容器
+            const captureContainer = document.createElement('div');
+            captureContainer.style.cssText = `
+                position: fixed;
+                top: -10000px;
+                left: -10000px;
+                width: 810px;
+                background: white;
+                padding: 18px;
+                font-family: 'Microsoft JhengHei', Arial, sans-serif;
+                z-index: -1000;
+            `;
+            
+            // 創建內容 - 保持座位顏色和灰色邊框
+            const content = `
+                <div style="font-family: 'Microsoft JhengHei', Arial, sans-serif; margin: 18px; background: white;">
+                    <div style="max-width: 810px; margin: 0 auto;">
+                        <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 18px; text-align: center; margin-bottom: 18px; border-radius: 11px; border: 2px solid #000000; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);">
+                            <strong style="font-size: 16px;">📋 佈告欄</strong>
+                        </div>
+                        <div style="display: grid; margin-bottom: 36px; ${seatType === 'separate' ? `grid-template-columns: repeat(${cols}, 1fr); gap: 7px;` : `grid-template-columns: repeat(${Math.ceil(cols/2)}, 1fr); gap: 7px;`}">
+                            ${generateJPGSeatingHTML()}
+                        </div>
+                        <div style="position: relative; margin-top: 27px;">
+                            <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 18px; text-align: center; border-radius: 11px; width: 144px; position: absolute; right: 0; top: 0; border: 2px solid #000000; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);">
+                                <strong style="font-size: 14px;">👨‍🏫 老師座位</strong>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            `;
+            
+            captureContainer.innerHTML = content;
+            document.body.appendChild(captureContainer);
+            
+            // 使用html2canvas截圖
+            html2canvas(captureContainer, {
+                backgroundColor: 'white',
+                scale: 1.5,
+                useCORS: true,
+                allowTaint: true,
+                width: 810,
+                height: captureContainer.scrollHeight
+            }).then(canvas => {
+                // 在新視窗開啟JPG圖片
+                const dataURL = canvas.toDataURL('image/jpeg', 0.9);
+                const newWindow = window.open('', '_blank');
+                newWindow.document.write(`
+                    <html>
+                        <head>
+                            <title>${className} - 座位表</title>
+                            <style>
+                                body { margin: 0; padding: 20px; background: #f5f5f5; text-align: center; }
+                                img { max-width: 100%; height: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border-radius: 8px; }
+                                .download-btn { 
+                                    margin: 20px; padding: 12px 24px; background: #667eea; color: white; 
+                                    border: none; border-radius: 8px; cursor: pointer; font-size: 16px;
+                                    text-decoration: none; display: inline-block;
+                                }
+                                .download-btn:hover { background: #5a67d8; }
+                            </style>
+                        </head>
+                        <body>
+                            <h2>${className} - 座位表</h2>
+                            <img src="${dataURL}" alt="座位表">
+                        </body>
+                    </html>
+                `);
+                
+                // 清理
+                document.body.removeChild(captureContainer);
+                
+                btnText.textContent = '📸 下載成JPG檔';
+                spinner.classList.add('hidden');
+                
+                showNotification('🎉 JPG檔案下載成功！', 'success');
+            }).catch(error => {
+                console.error('JPG生成失敗:', error);
+                document.body.removeChild(captureContainer);
+                
+                btnText.textContent = '📸 下載成JPG檔';
+                spinner.classList.add('hidden');
+                
+                showNotification('❌ JPG生成失敗，請重試', 'error');
+            });
+        }
+        
+        // 生成座位HTML用於JPG截圖 - 保持原始座位顏色
+        function generateJPGSeatingHTML() {
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            let html = '';
+            
+            if (seatType === 'separate') {
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const seatId = `${row}-${col}`;
+                        const student = seatingData[seatId];
+                        const seatContent = student || '';
+                        
+                        if (student) {
+                            // 已佔用座位 - 保持藍色漸層背景
+                            html += `<div style="width: 108px; height: 54px; border: 2px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; border-radius: 11px; margin: 0 auto; box-shadow: 0 4px 15px rgba(199, 210, 254, 0.3); background: linear-gradient(135deg, #e0e7ff, #c7d2fe); color: #374151; padding: 2px 4px; line-height: 1;">${seatContent}</div>`;
+                        } else {
+                            // 空座位 - 保持虛線邊框和淺色背景
+                            html += `<div style="width: 108px; height: 54px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; border-radius: 11px; margin: 0 auto; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.8); color: #6366f1; padding: 2px 4px; line-height: 1;">${seatContent}</div>`;
+                        }
+                    }
+                }
+            } else if (seatType === 'double') {
+                for (let row = 0; row < rows; row++) {
+                    for (let tableCol = 0; tableCol < Math.ceil(cols/2); tableCol++) {
+                        html += `<div style="display: flex; gap: 2px; background: rgba(255, 255, 255, 0.95); padding: 3px; border-radius: 11px; border: 2px solid rgba(255, 255, 255, 0.2); justify-content: center; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37); backdrop-filter: blur(8px);">`;
+                        
+                        const leftSeatId = `${row}-${tableCol * 2}`;
+                        const leftStudent = seatingData[leftSeatId];
+                        const leftSeatContent = leftStudent || '';
+                        
+                        if (leftStudent) {
+                            // 已佔用座位 - 保持藍色漸層背景
+                            html += `<div style="width: 81px; height: 36px; font-size: 12px; border: 2px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 4px 15px rgba(199, 210, 254, 0.3); background: linear-gradient(135deg, #e0e7ff, #c7d2fe); color: #374151; line-height: 1; padding: 2px 3px;">${leftSeatContent}</div>`;
+                        } else {
+                            // 空座位 - 保持虛線邊框和淺色背景
+                            html += `<div style="width: 81px; height: 36px; font-size: 12px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.8); color: #6366f1; line-height: 1; padding: 2px 3px;">${leftSeatContent}</div>`;
+                        }
+                        
+                        if (tableCol * 2 + 1 < cols) {
+                            const rightSeatId = `${row}-${tableCol * 2 + 1}`;
+                            const rightStudent = seatingData[rightSeatId];
+                            const rightSeatContent = rightStudent || '';
+                            
+                            if (rightStudent) {
+                                // 已佔用座位 - 保持藍色漸層背景
+                                html += `<div style="width: 81px; height: 36px; font-size: 12px; border: 2px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 4px 15px rgba(199, 210, 254, 0.3); background: linear-gradient(135deg, #e0e7ff, #c7d2fe); color: #374151; line-height: 1; padding: 2px 3px;">${rightSeatContent}</div>`;
+                            } else {
+                                // 空座位 - 保持虛線邊框和淺色背景
+                                html += `<div style="width: 81px; height: 36px; font-size: 12px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.8); color: #6366f1; line-height: 1; padding: 2px 3px;">${rightSeatContent}</div>`;
+                            }
+                        }
+                        
+                        html += '</div>';
+                    }
+                }
+            }
+            
+            return html;
+        }
+
+        // 生成座位HTML用於列印 - 黑白格式
+        function generatePrintSeatingHTML() {
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            let html = '';
+            
+            if (seatType === 'separate') {
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const seatId = `${row}-${col}`;
+                        const student = seatingData[seatId];
+                        const seatClass = student ? 'occupied' : 'empty';
+                        const seatContent = student || '';
+                        
+                        if (student) {
+                            html += `<div style="width: 108px; height: 54px; border: 2px solid #374151; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; border-radius: 11px; margin: 0 auto; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: white; color: #374151; padding: 2px 4px; line-height: 1;">${seatContent}</div>`;
+                        } else {
+                            html += `<div style="width: 108px; height: 54px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; border-radius: 11px; margin: 0 auto; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.9); color: #6366f1; padding: 2px 4px; line-height: 1;">${seatContent}</div>`;
+                        }
+                    }
+                }
+            } else if (seatType === 'double') {
+                for (let row = 0; row < rows; row++) {
+                    for (let tableCol = 0; tableCol < Math.ceil(cols/2); tableCol++) {
+                        html += `<div style="display: flex; gap: 2px; background: #f8fafc; padding: 3px; border-radius: 11px; border: 2px solid #e2e8f0; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">`;
+                        
+                        const leftSeatId = `${row}-${tableCol * 2}`;
+                        const leftStudent = seatingData[leftSeatId];
+                        const leftSeatContent = leftStudent || '';
+                        
+                        if (leftStudent) {
+                            html += `<div style="width: 81px; height: 36px; font-size: 16px; border: 2px solid #374151; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: white; color: #374151; line-height: 1; padding: 2px 3px;">${leftSeatContent}</div>`;
+                        } else {
+                            html += `<div style="width: 81px; height: 36px; font-size: 16px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.9); color: #6366f1; line-height: 1; padding: 2px 3px;">${leftSeatContent}</div>`;
+                        }
+                        
+                        if (tableCol * 2 + 1 < cols) {
+                            const rightSeatId = `${row}-${tableCol * 2 + 1}`;
+                            const rightStudent = seatingData[rightSeatId];
+                            const rightSeatContent = rightStudent || '';
+                            
+                            if (rightStudent) {
+                                html += `<div style="width: 81px; height: 36px; font-size: 16px; border: 2px solid #374151; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: white; color: #374151; line-height: 1; padding: 2px 3px;">${rightSeatContent}</div>`;
+                            } else {
+                                html += `<div style="width: 81px; height: 36px; font-size: 16px; border: 2px dashed #c7d2fe; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 11px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.9); color: #6366f1; line-height: 1; padding: 2px 3px;">${rightSeatContent}</div>`;
+                            }
+                        }
+                        
+                        html += '</div>';
+                    }
+                }
+            }
+            
+            return html;
+        }
+
+        // 列印功能
+        function printSeatingChart() {
+            if (students.length === 0) {
+                showNotification('❌ 請先匯入學生名單！', 'error');
+                return;
+            }
+            
+            const classNameInput = document.getElementById('classNameInput').value;
+            const className = classNameInput ? `${classNameInput} - 座位表` : '座位表';
+            const seatType = document.querySelector('input[name="seatType"]:checked').value;
+            
+            // 創建完整的HTML文檔內容
+            const printHTML = `
+                <!DOCTYPE html>
+                <html lang="zh-TW">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>${className}</title>
+                    <style>
+                        body {
+                            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+                            margin: 20px;
+                            background: white;
+                            color: black;
+                        }
+                        .print-container {
+                            max-width: 900px;
+                            margin: 0 auto;
+                        }
+                        .header {
+                            text-align: center;
+                            margin-bottom: 20px;
+                            padding-bottom: 15px;
+                            border-bottom: 3px solid #667eea;
+                        }
+                        .header h1 {
+                            font-size: 28px;
+                            margin: 10px 0;
+                            color: #374151;
+                        }
+                        .bulletin-board {
+                            color: black;
+                            padding: 20px;
+                            text-align: center;
+                            margin-bottom: 20px;
+                            border-radius: 12px;
+                            border: 2px solid black;
+                            font-size: 20px;
+                            font-weight: bold;
+                        }
+                        .seating-grid {
+                            display: grid;
+                            margin-bottom: 40px;
+                            gap: 8px;
+                            ${seatType === 'separate' ? `grid-template-columns: repeat(${cols}, 1fr);` : `grid-template-columns: repeat(${Math.ceil(cols/2)}, 1fr);`}
+                        }
+                        .teacher-area {
+                            text-align: right;
+                            margin-top: 30px;
+                        }
+                        .teacher-seat {
+                            color: black;
+                            padding: 20px;
+                            text-align: center;
+                            border-radius: 12px;
+                            width: 160px;
+                            margin: 0 auto;
+                            border: 2px solid black;
+                            font-size: 18px;
+                            font-weight: bold;
+                            display: inline-block;
+                        }
+                        .print-btn {
+                            margin: 20px auto;
+                            padding: 12px 24px;
+                            background: #667eea;
+                            color: white;
+                            border: none;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-size: 16px;
+                            display: block;
+                            width: 200px;
+                        }
+                        .print-btn:hover {
+                            background: #5a67d8;
+                        }
+                        @media print {
+                            body { margin: 15mm; padding: 0; font-size: 14px; }
+                            @page { size: A4 landscape; margin: 5mm; }
+                            .print-btn { display: none; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <h1>${className}</h1>
+                        </div>
+                        
+                        <div class="bulletin-board">
+                            📋 佈告欄
+                        </div>
+                        
+                        <div class="seating-grid">
+                            ${generatePrintSeatingHTML()}
+                        </div>
+                        
+                        <div class="teacher-area">
+                            <div class="teacher-seat">
+                                👨‍🏫 老師座位
+                            </div>
+                        </div>
+                        
+
+                    </div>
+                </body>
+                </html>
+            `;
+            
+            // 開啟新視窗並顯示列印內容
+            const printWindow = window.open('', '_blank', 'width=1000,height=700,scrollbars=yes,resizable=yes');
+            
+            if (printWindow) {
+                printWindow.document.write(printHTML);
+                printWindow.document.close();
+                printWindow.focus();
+                
+                showNotification('🖨️ 列印視窗已開啟！', 'success');
+            } else {
+                showNotification('❌ 無法開啟列印視窗，請檢查瀏覽器設定', 'error');
+            }
+        }
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99089654f2ca8514',t:'MTc2MDc5NjI5MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
